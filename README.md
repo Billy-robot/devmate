@@ -34,15 +34,15 @@ pnpm build
 
 1. 在 [Google AI Studio](https://aistudio.google.com/app/apikey) 创建或管理 Gemini API Key。
 2. 本地开发将 `.env.example` 复制为 `.env.local`，再填写 `GOOGLE_GENERATIVE_AI_API_KEY`。
-3. 默认模型示例为 `gemini-3.8-flash`，本地代理默认配置为 `http://127.0.0.1:10808`。没有使用代理时，将 `GOOGLE_PROXY_URL` 留空或删除。`.env.local` 不应提交到版本控制；仅服务端代码读取 Key，不使用 `NEXT_PUBLIC_` 前缀。
+3. 默认模型示例为 `gemini-3.8-flash`。本地 VPN 使用 HTTP 代理时，将 `GOOGLE_PROXY_URL` 设置为代理地址（示例为 `http://127.0.0.1:10808`）；不需要代理时留空或删除。`.env.local` 不应提交到版本控制；仅服务端代码读取 Key，不使用 `NEXT_PUBLIC_` 前缀。
 
-配置了 `GOOGLE_PROXY_URL` 时，服务端通过 Undici `ProxyAgent` 和 `setGlobalDispatcher` 设置出站代理。Node.js 服务端的 Undici `fetch` 请求都会使用该代理；不配置时保持默认网络行为。代理 URL 支持 HTTP/HTTPS 代理。
+聊天页面会从服务端获取当前 API Key 支持 `generateContent` 的 Gemini 模型列表，并允许选择模型。默认优先使用 `GOOGLE_MODEL`；若该模型不在可用列表中，则选择列表中的第一个模型。API Key 通过服务端请求头发送，不会放入浏览器 URL 或响应中。
 
 ### 按环境配置
 
 | 环境 | 模板 | 配置方式 |
 | --- | --- | --- |
-| 开发 | `.env.example` | 复制为 `.env.local`，在本机填写 API Key；`GOOGLE_PROXY_URL` 默认指向本机 10808 端口。 |
+| 开发 | `.env.example` | 复制为 `.env.local`，在本机填写 API Key，并按需设置代理地址。 |
 | 测试 | `.env.test.example` | 测试使用 Mock Provider，不需要 Key；`pnpm test` 不会加载或调用 Gemini。若运行 `next` 的测试环境，可复制为 `.env.test`。 |
 | 生产 | `.env.production.example` | 部署时在托管平台的生产环境变量/Secrets 设置 `GOOGLE_GENERATIVE_AI_API_KEY` 和 `GOOGLE_MODEL`，不要把真实 Key 写入 `.env.production` 或提交到仓库。 |
 
@@ -50,7 +50,7 @@ pnpm build
 
 ### 真实 Gemini 调用测试
 
-确认 `.env.development`（或 `.env.local`）已配置有效的 `GOOGLE_GENERATIVE_AI_API_KEY`、`GOOGLE_MODEL` 和 VPN 代理地址后，开一个终端启动开发服务器：
+确认 `.env.development`（或 `.env.local`）已配置有效的 `GOOGLE_GENERATIVE_AI_API_KEY`、`GOOGLE_MODEL`，以及需要时配置 `GOOGLE_PROXY_URL` 后，开一个终端启动开发服务器：
 
 ```bash
 pnpm dev
@@ -62,16 +62,17 @@ pnpm dev
 pnpm test:gemini
 ```
 
-该脚本通过本地 `/api/chat` 发起一次真实模型调用，最多等待 60 秒，并只输出模型回复或脱敏错误，不读取或打印 API Key。需要指定不同本地服务地址时设置 `CHAT_API_URL`。AI SDK 流式启动后发生的上游错误会记录错误类型及安全的 HTTP 状态码/网络错误码，可据此区分 Key/权限（401/403）、限流（429）、模型不存在（404）和代理/网络错误。
+该脚本直接使用与已验证测试相同的 Undici `ProxyAgent`、Google Provider 和 `generateText` 调用流程，先检查模型列表，再调用 `GOOGLE_MODEL` 指定的模型。Key 仅从服务端环境变量读取，使用请求头传输，不写入脚本、URL 或日志。
 
 如果 Key 曾经出现在截图、日志或其他共享内容中，应先在 Google AI Studio 撤销该 Key，再生成新 Key 并更新本地环境变量。
 
 ## 聊天 API 调用链路
 
-1. `Chat` 使用 `useChat` 和 `DefaultChatTransport`，把完整的 `UIMessage` 历史通过 `POST /api/chat` 发送。
-2. Route Handler 限制请求体大小，并使用 Zod 检查消息数量、角色、文本内容及长度。
-3. Provider 层只从服务端环境变量创建 Google Provider 和模型；聊天服务使用 `convertToModelMessages` 转换消息，再通过 `streamText` 调用 Gemini。
-4. `toUIMessageStreamResponse` 返回 AI SDK UI 流，前端边接收边渲染；客户端停止生成时，取消信号传递给模型请求。
+1. `Chat` 请求 `GET /api/models` 获取当前 Key 可用的模型列表，并允许用户选择模型。
+2. `useChat` 和 `DefaultChatTransport` 将所选模型 ID 与完整 `UIMessage` 历史通过 `POST /api/chat` 发送。
+3. Route Handler 限制请求体大小、使用 Zod 校验消息和模型 ID，并确认所选模型属于 Google 当前返回的可用列表。
+4. Provider 层只从服务端环境变量创建 Google Provider 和模型；聊天服务使用 `convertToModelMessages` 转换消息，再通过 `streamText` 调用 Gemini。
+5. `toUIMessageStreamResponse` 返回 AI SDK UI 流，前端边接收边渲染；客户端停止生成时，取消信号传递给模型请求。
 
 输入校验失败返回 `400`，请求体过大返回 `413`，同步识别到上游限流时返回 `429`，服务配置或其他服务端错误返回脱敏的 `500`。模型开始流式响应后，HTTP 状态码已发送；此后的模型错误通过 AI SDK 流错误通道返回安全提示，不能再更改为新的 HTTP 状态码。
 

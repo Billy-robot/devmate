@@ -34,12 +34,29 @@
   letter-spacing: 0.13em;
 }
 
-.model {
-  padding: 8px 12px;
+.modelPicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   border: 1px solid #ececf1;
-  border-radius: 999px;
+  border-radius: 12px;
+  padding: 7px 10px;
   color: #626275;
   font-size: 12px;
+}
+
+.modelSelect {
+  max-width: 190px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #383849;
+  font: inherit;
+  font-weight: 600;
+}
+
+.modelSelect:disabled {
+  color: #9898a5;
 }
 
 .emptyState {

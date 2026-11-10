@@ -14,10 +14,10 @@ export class AIConfigurationError extends Error {
 
 export function getGoogleChatModel(
   env: AIEnvironment = process.env,
+  requestedModelId?: string,
 ): LanguageModel {
   const apiKey = env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
-  const modelId = env.GOOGLE_MODEL?.trim();
-  const proxyUrl = env.GOOGLE_PROXY_URL?.trim();
+  const modelId = requestedModelId?.trim() || env.GOOGLE_MODEL?.trim();
 
   if (!apiKey) {
     throw new AIConfigurationError("GOOGLE_GENERATIVE_AI_API_KEY");
@@ -27,7 +27,7 @@ export function getGoogleChatModel(
     throw new AIConfigurationError("GOOGLE_MODEL");
   }
 
-  configureUndiciProxy(proxyUrl);
+  configureUndiciProxy(env);
 
   return createGoogleProvider(apiKey)(modelId);
 }

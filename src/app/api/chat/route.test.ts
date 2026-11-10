@@ -90,11 +90,14 @@ describe("POST /api/chat", () => {
         headers: { "content-type": "text/event-stream" },
       }),
     );
-    const post = createChatPostHandler(generate);
-    const response = await post(createRequest({ messages: validMessages }));
+    const post = createChatPostHandler(generate, async () => true);
+    const response = await post(
+      createRequest({ messages: validMessages, modelId: "gemini-test" }),
+    );
 
     expect(generate).toHaveBeenCalledWith(
       validMessages,
+      "gemini-test",
       expect.any(AbortSignal),
     );
     expect(response.status).toBe(200);
@@ -154,17 +157,41 @@ describe("POST /api/chat", () => {
   it("将客户端取消信号传递给模型调用", async () => {
     const controller = new AbortController();
     let receivedSignal: AbortSignal | undefined;
-    const post = createChatPostHandler(async (_messages, signal) => {
+    const post = createChatPostHandler(async (_messages, _modelId, signal) => {
       receivedSignal = signal;
       return new Response("stream");
-    });
+    }, async () => true);
 
     await post(
-      createRequest({ messages: validMessages }, { signal: controller.signal }),
+      createRequest(
+        { messages: validMessages, modelId: "gemini-test" },
+        { signal: controller.signal },
+      ),
     );
     controller.abort();
 
     expect(receivedSignal).toBeInstanceOf(AbortSignal);
     expect(receivedSignal?.aborted).toBe(true);
+  });
+
+  it("拒绝不符合 Gemini 模型 ID 格式的选择", async () => {
+    const post = createChatPostHandler(vi.fn());
+    const response = await post(
+      createRequest({ messages: validMessages, modelId: "other-provider/model" }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("拒绝 Google 未提供的模型", async () => {
+    const post = createChatPostHandler(vi.fn(), async () => false);
+    const response = await post(
+      createRequest({ messages: validMessages, modelId: "gemini-unknown" }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "所选 Gemini 模型不可用，请重新选择模型。",
+    });
   });
 });

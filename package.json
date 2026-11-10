@@ -16,10 +16,11 @@
     "@ai-sdk/google": "4.0.112",
     "@ai-sdk/react": "4.0.167",
     "ai": "7.0.163",
+    "dotenv": "^18.0.10",
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "undici": "7.30.1",
+    "undici": "^8.12.4",
     "zod": "4.6.7"
   },
   "devDependencies": {

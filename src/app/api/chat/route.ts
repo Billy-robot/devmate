@@ -6,12 +6,15 @@ import {
   MAX_REQUEST_BYTES,
   type ChatRequestMessage,
 } from "@/lib/ai/chat-schema";
+import { isGoogleModelAvailable } from "@/lib/ai/models";
 import { getGoogleChatModel } from "@/lib/ai/provider";
 
 type ChatGenerator = (
   messages: ChatRequestMessage[],
+  modelId: string | undefined,
   abortSignal: AbortSignal,
 ) => Promise<Response>;
+type ModelValidator = (modelId: string) => Promise<boolean>;
 
 class RequestError extends Error {
   constructor(
@@ -110,8 +113,9 @@ function getErrorResponse(error: unknown): Response {
 }
 
 export function createChatPostHandler(
-  generate: ChatGenerator = (messages, abortSignal) =>
-    streamChat(messages, getGoogleChatModel(), abortSignal),
+  generate: ChatGenerator = (messages, modelId, abortSignal) =>
+    streamChat(messages, getGoogleChatModel(process.env, modelId), abortSignal),
+  validateModel: ModelValidator = (modelId) => isGoogleModelAvailable(modelId),
 ) {
   return async function POST(request: Request): Promise<Response> {
     try {
@@ -125,8 +129,22 @@ export function createChatPostHandler(
         );
       }
 
+      if (
+        parsed.data.modelId &&
+        !(await validateModel(parsed.data.modelId))
+      ) {
+        return Response.json(
+          { error: "所选 Gemini 模型不可用，请重新选择模型。" },
+          { status: 400 },
+        );
+      }
+
       // Production deployments must add authentication, rate limiting, and usage controls here.
-      return await generate(parsed.data.messages, request.signal);
+      return await generate(
+        parsed.data.messages,
+        parsed.data.modelId,
+        request.signal,
+      );
     } catch (error) {
       if (request.signal.aborted) {
         return new Response(null, { status: 499 });

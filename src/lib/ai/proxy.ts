@@ -1,38 +1,36 @@
 import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from "undici";
 
-let configuredProxyUrl: string | undefined;
-let configuredDispatcher: ProxyAgent | undefined;
+let proxyUrl: string | undefined;
+let proxyAgent: ProxyAgent | undefined;
 
-export function configureUndiciProxy(proxyUrl?: string): void {
-  const normalizedProxyUrl = proxyUrl?.trim();
+export function configureUndiciProxy(
+  env: Record<string, string | undefined> = process.env,
+): void {
+  const configuredUrl = env.GOOGLE_PROXY_URL?.trim();
 
-  if (!normalizedProxyUrl) {
+  if (!configuredUrl) {
     return;
   }
 
-  const parsedUrl = new URL(normalizedProxyUrl);
-
+  const parsedUrl = new URL(configuredUrl);
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-    throw new Error("Google proxy URL must use HTTP or HTTPS.");
+    throw new Error("GOOGLE_PROXY_URL must use HTTP or HTTPS.");
   }
 
-  const proxyHref = parsedUrl.href;
+  const normalizedUrl = parsedUrl.href;
   const currentDispatcher = getGlobalDispatcher();
 
-  if (
-    proxyHref === configuredProxyUrl &&
-    currentDispatcher === configuredDispatcher
-  ) {
+  if (normalizedUrl === proxyUrl && currentDispatcher === proxyAgent) {
     return;
   }
 
-  if (!configuredDispatcher || proxyHref !== configuredProxyUrl) {
-    configuredDispatcher = new ProxyAgent(parsedUrl.href);
+  if (!proxyAgent || normalizedUrl !== proxyUrl) {
+    proxyAgent = new ProxyAgent(normalizedUrl);
   }
 
-  if (currentDispatcher !== configuredDispatcher) {
-    setGlobalDispatcher(configuredDispatcher);
+  if (currentDispatcher !== proxyAgent) {
+    setGlobalDispatcher(proxyAgent);
   }
 
-  configuredProxyUrl = proxyHref;
+  proxyUrl = normalizedUrl;
 }

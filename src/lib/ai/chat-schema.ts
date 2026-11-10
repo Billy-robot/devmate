@@ -18,6 +18,12 @@ const chatMessageSchema = z.object({
 export const chatRequestSchema = z
   .object({
     messages: z.array(chatMessageSchema).min(1).max(MAX_MESSAGES),
+    modelId: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^gemini-[a-zA-Z0-9._-]+$/)
+      .optional(),
   })
   .superRefine(({ messages }, context) => {
     if (!messages.some((message) => message.role === "user")) {
